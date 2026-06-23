@@ -1,0 +1,26 @@
+[
+  {
+    "id": "4ce56c7d-a2ba-4aa0-83d2-5c476082f5eb",
+    "name": "Blessing Peters",
+    "age": 23,
+    "sex": "Female",
+    "grade": "None",
+    "role": "Administrator"
+  },
+  {
+    "id": "a3e27d8a-0d25-4f88-b29d-9220607e230c",
+    "name": "John Ken",
+    "age": 79,
+    "sex": "Male",
+    "grade": "Second",
+    "role": "Student"
+  },
+  {
+    "id": "9ff2ce76-db84-4e48-be3f-96cb5843c380",
+    "name": "John Kenyo",
+    "age": 79,
+    "sex": "Male",
+    "grade": "Second",
+    "role": "Student"
+  }
+]
