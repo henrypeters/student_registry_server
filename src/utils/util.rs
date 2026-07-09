@@ -11,7 +11,14 @@ pub fn load_storage() -> Vec<Entity> {
 
     let content = fs::read_to_string(FILE_PATH).expect("Failed to read file");
     
-    let result:Vec<Entity> = serde_json::from_str(&content).expect("Failed to deserialize");
+    // let result:Vec<Entity> = serde_json::from_str(&content).expect("Failed to deserialize, no brackets `[]`");
+    let result = match serde_json::from_str(&content) {
+        Ok(e) => e,
+        Err(_) => {
+            fs::write(FILE_PATH, "[]");
+            vec![]
+        }
+    };
     
     result
 }

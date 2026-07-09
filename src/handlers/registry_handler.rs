@@ -1,4 +1,4 @@
-use crate::schema::registry::{Registry, AddStudent, CreateNewRegistry, GetAndDeleteStudentById, ChangeStudentGrade};
+use crate::schema::registry::{AddStudent, AuthUser, ChangeStudentGrade, CreateNewRegistry, GetAndDeleteStudentById, Registry};
 use crate::schema::entity::Entity;
 use crate::schema::grade::Grade;
 use crate::schema::role::Role::{self, Student};
@@ -7,11 +7,12 @@ use crate::routes::AppState;
 
 use crate::utils::util::{load_storage, save_data};
 
+use axum::Json;
 use tracing_subscriber::registry;
 use uuid::Uuid;
 
 use axum::extract::State;
-use axum::{Json, http::StatusCode};
+use axum::{http::StatusCode};
 pub async fn init_registry(
     State(state): State<AppState>,
     Json(payload): Json<CreateNewRegistry>
@@ -27,8 +28,12 @@ pub async fn init_registry(
             Err("Regisry is already initialized".to_string())
         },
         None =>  {
-            *storage = Some(Registry::init(payload.name.clone(), payload.age, payload.sex));
-            Ok((StatusCode::CREATED, format!("==== Registry iniialized === \nAdmin: {}", payload.name.clone())))
+            let (registry, response) = match Registry::init(payload.name.clone(), payload.age, payload.sex){
+                Ok(data, ) => data,
+                Err(e) => return Err(e) 
+            };
+            *storage = Some(registry);
+            Ok((StatusCode::CREATED, format!("==== Registry iniialized === \nAdmin: {} \nTOKEN: {:?}", payload.name.clone(), response)))
         }
     }   
 }
@@ -53,9 +58,15 @@ pub async fn get_all_entities(
 /////////////// STUDENTS
 
 pub async fn add_student(
+    AuthUser{claims}: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<AddStudent>
+
 ) -> Result<(StatusCode, Json<Entity>), String> {
+    if claims.role != Role::Administrator {
+        return Err("Unauthorized".to_string());
+    }
+
     let student = {
         let mut storage = state.container.lock().unwrap();
         
@@ -66,7 +77,10 @@ pub async fn add_student(
                                                     Grade::map_int_to_grade(payload.grade), 
                                                     Role::Student);
                 match registry.add_student(student.clone()) {
-                    Ok(()) => (),
+                    //This is returning a unit type, student JWT, and the student entity
+                    // Wanted to return the token(JWT) and student entity, but the `add_student` 
+                    // function returns this: `()` also because save_data is a function in util.rs that returns a result of unit type 
+                    Ok(()) => (),  
                     Err(e) => return Err(e)
                 }
 
@@ -75,7 +89,10 @@ pub async fn add_student(
             None => return Err("Registry Not Initialized".to_string())
         }
     };
+
     
+    // In here, we're returniing statuscode, student entity and token together as a string.
+    // Please Note: Every token generated after adding new students is not connected/related to each student yet. They(JWT) are just randomly created 
     Ok((StatusCode::FOUND, Json(student)))
 }
 
@@ -124,10 +141,14 @@ pub async fn get_student_by_id(
 }
 
 pub async fn change_grade(
+    AuthUser { claims }: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<ChangeStudentGrade>
 ) -> Result<(StatusCode, Json<Entity>), String> {
-    
+    if claims.role != Role::Administrator {
+        return Err("Unauthoriized".to_string());
+    }
+
     let student = {
         let mut store = state.container.lock().unwrap();
         
@@ -150,9 +171,13 @@ pub async fn change_grade(
 
 
 pub async fn remove_student(
+    AuthUser { claims }: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<GetAndDeleteStudentById>
 ) -> Result<(StatusCode, Json<Entity>), String> {
+    if claims.role != Role::Administrator {
+        return Err("Unauthorized".to_string());
+    }
 
     let student = {
         let mut store = state.container.lock().unwrap();
@@ -173,3 +198,46 @@ pub async fn remove_student(
     
 }
 
+
+
+
+/////////// STAFFS
+pub async fn add_staff(
+    AuthUser{claims}: AuthUser,
+    State(state): State<AppState>,
+    Json(payload): Json<AddStudent>
+
+) -> Result<(StatusCode, String), String> {
+    if claims.role != Role::Administrator {
+        return Err("Unauthorized".to_string());
+    }
+
+    let new_staff_data = {
+        let mut storage = state.container.lock().unwrap();
+        
+        match storage.as_mut() {
+            Some(registry) => {
+                let staff = Entity::new(payload.name, payload.age, 
+                                                    Sex::map_int_to_enum(payload.sex), 
+                                                    Grade::None, 
+                                                    Role::Staff);
+                match registry.add_staff(staff.clone()) {
+                    //This is returning a unit type, student JWT, and the staff entity
+                    // Wanted to return the token(JWT) and student entity, but the `add_staff` 
+                    // function returns this: `()` also because save_data is a function in util.rs that returns a result of unit type 
+                    Ok(((), token)) => ((), token, staff),  
+                    Err(e) => return Err(e)
+                }
+
+            },
+            None => return Err("Registry Not Initialized".to_string())
+        }
+    };
+
+    // Destructure
+    let (_, token, staff) = new_staff_data;
+    
+    // In here, we're returniing statuscode, student entity and token together as a string.
+    // Please Note: Every token generated after adding new students is not connected/related to each student yet. They(JWT) are just randomly created 
+    Ok((StatusCode::FOUND, format!("NEW STAFF ADDED \nStudent: {:?} \nToken: {}", staff, token)))
+}

@@ -1,14 +1,39 @@
 
-
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
 use crate::schema::entity::Entity;
 use crate::schema::role::Role;
 use crate::schema::sex::Sex;
 use crate::schema::grade::Grade;
-
 use crate::utils::util::{load_storage, save_data};
+
+
+// use jsonwebtoken::errors::ErrorKind::Json;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+use axum::{
+    extract::{FromRequestParts, Json},
+    http::{
+        header::AUTHORIZATION,
+        request::Parts,
+        StatusCode
+    },
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Router
+};
+use jsonwebtoken::{
+    decode,
+    encode,
+    DecodingKey,
+    EncodingKey, 
+    Validation,
+    Header,
+};
+
+use chrono::{Duration, Utc};
+
+
+const JWT_secret: &str = "token_creation_secret##1";
+
 
 
 #[derive(Deserialize)]
@@ -37,20 +62,87 @@ pub struct ChangeStudentGrade {
     pub grade: u8
 }
 
+//////////// JSON Web Token
+#[derive(Deserialize, Serialize)]
+
+#[derive(Debug)]
+pub struct TokenResponse{
+    pub token: String
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: String,
+    pub role: Role,
+    pub exp: usize
+}
+
+
+pub struct AuthUser{
+    pub claims: Claims
+}
+
+impl<S> FromRequestParts<S> for AuthUser
+where S: Send + Sync {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        _: &S
+    ) -> Result<Self, Self::Rejection> {
+        let auth_handller = parts
+                            .headers
+                            .get(AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            .ok_or_else(|| {
+                                (StatusCode::UNAUTHORIZED, "Missing Authorization Header").into_response()
+                            })?;
+
+        let token = auth_handller
+                            .strip_prefix("Bearer ")
+                            .ok_or_else(|| {
+                                (StatusCode::UNAUTHORIZED, "Invalid Authorization format").into_response()
+                            })?;
+
+        let decoded = decode::<Claims>(token, &DecodingKey::from_secret(JWT_secret.as_bytes()), &Validation::default())
+                                                    .map_err(|_| {
+                                                        (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
+                                                    })?;
+
+        Ok(AuthUser { 
+            claims: decoded.claims 
+        })                                            
+    }
+}
+
 #[derive(Serialize)]
 pub struct Registry {
     pub entities: Vec<Entity>,
 }
 
 impl Registry {
-    pub fn init(name: String, age: u8, sex: u8) -> Self {
-        let admin = Entity::new(name, age, Sex::map_int_to_enum(sex), Grade::None, Role::Administrator);
+    pub fn init(name: String, age: u8, sex: u8) -> Result<(Self, String), String> {
+        let expiration = Utc::now() + Duration::hours(24);
 
+        let claims = Claims {
+            sub: name.clone(),
+            role: Role::Administrator,
+            exp: expiration.timestamp() as usize
+        };
+
+        let token = match  encode(&Header::default(), &claims, &EncodingKey::from_secret(JWT_secret.as_bytes())) {
+            Ok(token) => token,
+            Err(_) => return Err("Internal Sever Error".to_string())
+        };
+
+        // let response = TokenResponse {
+        //     token
+        // };
+
+        let admin = Entity::new(name, age, Sex::map_int_to_enum(sex), Grade::None, Role::Administrator);
         let entities = vec![admin];
 
-        Self { 
-            entities: entities
-        }
+        Ok((Self { entities: entities}, token))
     }
 
     pub fn all_entities(&self) -> Vec<Entity> {
@@ -62,8 +154,8 @@ impl Registry {
     //////// STUDENTS
 
     pub fn add_student(&mut self, student: Entity) -> Result<(), String> {
-        // let student = Entity::new(name.to_string(), age, sex, grade, Role::Student);
-        self.entities.push(student);
+        self.entities.push(student.clone());
+
         match save_data(&self.entities) {
             Ok(()) => Ok(()),
             Err(e) => Err(format!("{}", e))
@@ -74,7 +166,6 @@ impl Registry {
         let file_storage = load_storage();
         
         let ref_student_vec: Vec<&Entity> = file_storage.iter().filter(|x| x.role == Role::Student).collect();
-        // let y = checkout.collect();
         if ref_student_vec.is_empty() {
             return Err("No students in registry".to_string());
         }
@@ -134,5 +225,28 @@ impl Registry {
 
 
     //////////// STAFFS
-    
+    pub fn add_staff(&mut self, staff: Entity) -> Result<((), String), String> {
+        self.entities.push(staff.clone());
+
+        let expiration = Utc::now() + Duration::hours(24);
+
+        let claims = Claims {
+            sub: staff.name,
+            role: Role::Staff,
+            exp: expiration.timestamp() as usize
+        };
+
+        let token = match encode(&Header::default(), &claims, &EncodingKey::from_secret(JWT_secret.as_bytes())){
+            Ok(token) => token,
+            Err(_) => return Err("Internal Server Error".to_string())
+        };
+
+        match save_data(&self.entities) {
+            Ok(()) => Ok(((), token)),
+            Err(e) => Err(format!("{}", e))
+        }
+    }
+
+
+
 }
