@@ -50,7 +50,7 @@ pub async fn get_all_entities(
 
             Ok((StatusCode::FOUND, Json(students)))
         },
-        None => return Err("Can't get all entities".to_string())
+        None => return Err("No entities found".to_string())
     }
 }
 

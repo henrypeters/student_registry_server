@@ -191,20 +191,23 @@ impl Registry {
 
     }
 
+    // eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJKYW1lc29uIiwicm9sZSI6IkFkbWluaXN0cmF0b3IiLCJleHAiOjE3ODM5NTQ4MjF9.yWnyvdCGwPcqib0Anko8VIDIMi-PGisnUvnyHMGbdAs
+
     pub fn change_student_grade(&mut self, id: Uuid, grade: u8) -> std::io::Result<Entity> {
-        let file_storage = load_storage();
+        let mut file_storage = load_storage();
 
         let new_grade = Grade::map_int_to_grade(grade);
-        let mut student = match file_storage.iter().find(|student| student.id == id && student.grade != new_grade && student.role == Role::Student) {
-            Some(student) => student.clone(),
+        let student = match file_storage.iter_mut().find(|student| student.id == id && student.grade != new_grade && student.role == Role::Student) {
+            Some(student) => student,
             None => return Err(std::io::Error::other("Coundn't find student"))
         };
 
         student.grade = new_grade;
+        let result = student.clone();
         
         save_data(&file_storage)?;
 
-        Ok(student)
+        Ok(result)
     }
 
     pub fn remove_student(&mut self, id: Uuid) -> std::io::Result<Entity>{
