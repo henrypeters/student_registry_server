@@ -1,4 +1,6 @@
 
+use std::io;
+
 use crate::schema::entity::Entity;
 use crate::schema::role::Role;
 use crate::schema::sex::Sex;
@@ -6,6 +8,7 @@ use crate::schema::grade::Grade;
 use crate::utils::util::{load_storage, save_data};
 
 
+use axum::http::Error;
 // use jsonwebtoken::errors::ErrorKind::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -32,12 +35,16 @@ use jsonwebtoken::{
 use chrono::{Duration, Utc};
 
 
-const JWT_secret: &str = "token_creation_secret##1";
+// const JWT_secret: &str = "token_creation_secret##1";
+
+fn jwt_secret() -> String {
+    std::env::var("JWT_SECRET").expect("JWT_SECRET must be set in the environment")
+}
 
 
 
 #[derive(Deserialize)]
-pub struct CreateNewRegistry {
+pub struct CreateNewRegistryOrAddStaff {
     pub name: String,
     pub age: u8,
     pub sex: u8
@@ -49,11 +56,6 @@ pub struct AddStudent {
     pub age: u8,
     pub sex: u8,
     pub grade: u8
-}
-
-#[derive(Deserialize)]
-pub struct GetAndDeleteStudentById {
-    pub id: Uuid
 }
 
 #[derive(Deserialize)]
@@ -104,7 +106,8 @@ where S: Send + Sync {
                                 (StatusCode::UNAUTHORIZED, "Invalid Authorization format").into_response()
                             })?;
 
-        let decoded = decode::<Claims>(token, &DecodingKey::from_secret(JWT_secret.as_bytes()), &Validation::default())
+        let secret = jwt_secret();
+        let decoded = decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &Validation::default())
                                                     .map_err(|_| {
                                                         (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
                                                     })?;
@@ -130,7 +133,8 @@ impl Registry {
             exp: expiration.timestamp() as usize
         };
 
-        let token = match  encode(&Header::default(), &claims, &EncodingKey::from_secret(JWT_secret.as_bytes())) {
+        let secret = jwt_secret();
+        let token = match  encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes())) {
             Ok(token) => token,
             Err(_) => return Err("Internal Sever Error".to_string())
         };
@@ -191,8 +195,6 @@ impl Registry {
 
     }
 
-    // eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJKYW1lc29uIiwicm9sZSI6IkFkbWluaXN0cmF0b3IiLCJleHAiOjE3ODM5NTQ4MjF9.yWnyvdCGwPcqib0Anko8VIDIMi-PGisnUvnyHMGbdAs
-
     pub fn change_student_grade(&mut self, id: Uuid, grade: u8) -> std::io::Result<Entity> {
         let mut file_storage = load_storage();
 
@@ -229,20 +231,22 @@ impl Registry {
 
     //////////// STAFFS
     pub fn add_staff(&mut self, staff: Entity) -> Result<((), String), String> {
-        self.entities.push(staff.clone());
-
+        
         let expiration = Utc::now() + Duration::hours(24);
-
+        
         let claims = Claims {
-            sub: staff.name,
+            sub: staff.clone().name,
             role: Role::Staff,
             exp: expiration.timestamp() as usize
         };
-
-        let token = match encode(&Header::default(), &claims, &EncodingKey::from_secret(JWT_secret.as_bytes())){
+        
+        let secret = jwt_secret();
+        let token = match encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes())){
             Ok(token) => token,
             Err(_) => return Err("Internal Server Error".to_string())
         };
+
+        self.entities.push(staff.clone());
 
         match save_data(&self.entities) {
             Ok(()) => Ok(((), token)),
@@ -250,6 +254,48 @@ impl Registry {
         }
     }
 
+     pub fn list_all_staffs(&self) -> Result<Vec<Entity>, String> {
+        let file_storage = load_storage();
+        
+        let ref_staff_vec: Vec<&Entity> = file_storage.iter().filter(|x| x.role == Role::Staff).collect();
+        if ref_staff_vec.is_empty() {
+            return Err("No students in registry".to_string());
+        }
 
+        let owned_staff_vec:Vec<Entity> = ref_staff_vec.into_iter().cloned().collect();
+
+        Ok(owned_staff_vec)
+        
+    }
+
+    pub fn get_staff_by_id(&self, id: Uuid) -> Option<Entity> {
+        let file_storage = load_storage();
+
+        let staff_option = file_storage.into_iter()
+                                            .find(|staff| staff.id == id && staff.role == Role::Student);
+                                    
+        match staff_option {
+            Some(staff) => {
+                Some(staff.clone())
+            },
+            None => None
+        }   
+
+    }
+
+    pub fn remove_staff(&mut self, id: Uuid) -> io::Result<Entity> {
+        let mut file_storage = load_storage();
+
+        let index = match file_storage.iter().position(|staff| staff.id == id && staff.role == Role::Staff ) {
+            Some(staff) => staff,
+            None => return Err(std::io::Error::other("Couldn't find student"))
+        };
+
+        let removed_staff = file_storage.remove(index);
+
+        save_data(&file_storage)?;
+
+        Ok(removed_staff)        
+    }
 
 }

@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "id": "d6a442c4-a4c3-408b-aa2c-c786aae94a0d",
+    "name": "Jameson",
+    "age": 20,
+    "sex": "Male",
+    "grade": "None",
+    "role": "Administrator"
+  },
+  {
+    "id": "e6f11015-24fc-4fa6-aa26-3bc981a3ec67",
+    "name": "Mark",
+    "age": 18,
+    "sex": "Male",
+    "grade": "First",
+    "role": "Student"
+  }
+]

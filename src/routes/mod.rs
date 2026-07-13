@@ -1,4 +1,4 @@
-use crate::handlers::{root::root, registry_handler::{init_registry, add_student, get_students, get_student_by_id, change_grade, remove_student, get_all_entities}};
+use crate::handlers::{root::root, registry_handler::{init_registry, add_student, add_staff, get_students, get_student_by_id, get_staffs, get_staff_by_id, change_grade, remove_student, remove_staff, get_all_entities}};
 use crate::schema::{registry::Registry, role::Role, entity::Entity, grade::Grade, sex::Sex};
 use crate::utils::util::load_storage;
 
@@ -43,9 +43,13 @@ pub async fn axum_router() -> Router {
         .route("/add-student", post(add_student))
         .route("/all-students", get(get_students))
         .route("/all-entities", get(get_all_entities))
-        .route("/get-student", get(get_student_by_id))
+        .route("/get-student/{id}", get(get_student_by_id))
         .route("/change-grade", put(change_grade))
-        .route("/remove-student", delete(remove_student))
+        .route("/remove-student/{id}", delete(remove_student))
+        .route("/add-staff", post(add_staff))
+        .route("/all-staffs", get(get_staffs))
+        .route("/get-staff/{id}", get(get_staff_by_id))
+        .route("/remove-staff/{id}", delete(remove_staff))
         .with_state(state);
         // `POST /users` goes to `create_user`
         // .route("/users", post(create_user));

@@ -1,4 +1,4 @@
-use crate::schema::registry::{AddStudent, AuthUser, ChangeStudentGrade, CreateNewRegistry, GetAndDeleteStudentById, Registry};
+use crate::schema::registry::{AddStudent, AuthUser, ChangeStudentGrade, CreateNewRegistryOrAddStaff, Registry};
 use crate::schema::entity::Entity;
 use crate::schema::grade::Grade;
 use crate::schema::role::Role::{self, Student};
@@ -8,14 +8,16 @@ use crate::routes::AppState;
 use crate::utils::util::{load_storage, save_data};
 
 use axum::Json;
+use axum::extract::Path;
 use tracing_subscriber::registry;
 use uuid::Uuid;
 
 use axum::extract::State;
 use axum::{http::StatusCode};
+
 pub async fn init_registry(
     State(state): State<AppState>,
-    Json(payload): Json<CreateNewRegistry>
+    Json(payload): Json<CreateNewRegistryOrAddStaff>
 ) -> Result<(StatusCode, String), String> {
     let mut storage = state.container.lock().unwrap();
     
@@ -77,9 +79,6 @@ pub async fn add_student(
                                                     Grade::map_int_to_grade(payload.grade), 
                                                     Role::Student);
                 match registry.add_student(student.clone()) {
-                    //This is returning a unit type, student JWT, and the student entity
-                    // Wanted to return the token(JWT) and student entity, but the `add_student` 
-                    // function returns this: `()` also because save_data is a function in util.rs that returns a result of unit type 
                     Ok(()) => (),  
                     Err(e) => return Err(e)
                 }
@@ -90,9 +89,6 @@ pub async fn add_student(
         }
     };
 
-    
-    // In here, we're returniing statuscode, student entity and token together as a string.
-    // Please Note: Every token generated after adding new students is not connected/related to each student yet. They(JWT) are just randomly created 
     Ok((StatusCode::FOUND, Json(student)))
 }
 
@@ -120,14 +116,14 @@ pub async fn get_students(
 
 pub async fn get_student_by_id(    
     State(state): State<AppState>,
-    Json(payload): Json<GetAndDeleteStudentById>
+    Path(id): Path<Uuid>
 ) -> Result<(StatusCode, Json<Entity>), String> {
     
     let student = {
         let store = state.container.lock().unwrap();
         match store.as_ref() {
             Some(registry) => {
-               match registry.get_student_by_id(payload.id){
+               match registry.get_student_by_id(id){
                     Some(student) => student.clone(),
                     None => return Err("Can't find student".to_string())
                 }
@@ -173,7 +169,7 @@ pub async fn change_grade(
 pub async fn remove_student(
     AuthUser { claims }: AuthUser,
     State(state): State<AppState>,
-    Json(payload): Json<GetAndDeleteStudentById>
+    Path(id): Path<Uuid>
 ) -> Result<(StatusCode, Json<Entity>), String> {
     if claims.role != Role::Administrator {
         return Err("Unauthorized".to_string());
@@ -185,7 +181,7 @@ pub async fn remove_student(
 
         match store.as_mut() {
             Some(registry) => {
-                match registry.remove_student(payload.id) {
+                match registry.remove_student(id) {
                     Ok(student) => student,
                     Err(_) => return Err("Can't find student to remove".to_string())
                 }
@@ -205,7 +201,7 @@ pub async fn remove_student(
 pub async fn add_staff(
     AuthUser{claims}: AuthUser,
     State(state): State<AppState>,
-    Json(payload): Json<AddStudent>
+    Json(payload): Json<CreateNewRegistryOrAddStaff>
 
 ) -> Result<(StatusCode, String), String> {
     if claims.role != Role::Administrator {
@@ -239,5 +235,77 @@ pub async fn add_staff(
     
     // In here, we're returniing statuscode, student entity and token together as a string.
     // Please Note: Every token generated after adding new students is not connected/related to each student yet. They(JWT) are just randomly created 
-    Ok((StatusCode::FOUND, format!("NEW STAFF ADDED \nStudent: {:?} \nToken: {}", staff, token)))
+    Ok((StatusCode::FOUND, format!("NEW STAFF ADDED \nStaff`: {:?} \nToken: {}", staff, token)))
+}
+
+
+pub async fn get_staffs(
+    State(state): State<AppState>,
+) -> Result<(StatusCode, Json<Vec<Entity>>), String> {
+    let staffs = {
+        let storage = state.container.lock().unwrap();
+        
+        match storage.as_ref() {
+            Some(registry) => {
+           
+            match registry.list_all_staffs() {
+                    Ok(staffs) => staffs,
+                    Err(e) => return Err(e)
+                } 
+            },
+            None => return Err("Registry Not Initialized".to_string())
+        }
+    };
+        
+    Ok((StatusCode::FOUND, Json(staffs)))
+}
+
+pub async fn get_staff_by_id(    
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>
+) -> Result<(StatusCode, Json<Entity>), String> {
+    
+    let staff = {
+        let store = state.container.lock().unwrap();
+        match store.as_ref() {
+            Some(registry) => {
+               match registry.get_staff_by_id(id){
+                    Some(staff) => staff.clone(),
+                    None => return Err("Can't find student".to_string())
+                }
+            },
+            None => return Err("Registry not initialized".to_string())
+        }
+    };
+
+    
+    Ok((StatusCode::FOUND, Json(staff)))
+}
+
+
+pub async fn remove_staff(
+    AuthUser { claims }: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>
+) -> Result<(StatusCode, Json<Entity>), String> {
+    if claims.role != Role::Administrator {
+        return Err("Unauthorized".to_string());
+    }
+
+    let student = {
+        let mut store = state.container.lock().unwrap();
+
+        match store.as_mut() {
+            Some(registry) => {
+                match registry.remove_staff(id) {
+                    Ok(student) => student,
+                    Err(_) => return Err("Can't find staff to remove".to_string())
+                }
+            }
+            None => return Err("Registry not initialiazed".to_string())
+        }
+    };
+
+    Ok((StatusCode::FOUND, Json(student)))
+    
 }

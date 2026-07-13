@@ -96,6 +96,8 @@ const PORT: &str = "127.0.0.1:3000";
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     // initialize tracing
     tracing_subscriber::fmt::init();
 
